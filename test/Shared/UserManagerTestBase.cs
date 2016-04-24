@@ -4,18 +4,18 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using Microsoft.AspNet.Testing;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Testing;
+using Microsoft.AspNetCore.Testing.xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using System.Linq.Expressions;
-using Microsoft.AspNet.Http;
-using Microsoft.AspNet.Http.Internal;
-using Microsoft.AspNet.Testing.xunit;
 
-namespace Microsoft.AspNet.Identity.Test
+namespace Microsoft.AspNetCore.Identity.Test
 {
     // Common functionality tests that all verifies user manager functionality regardless of store implementation
     public abstract class UserManagerTestBase<TUser, TRole> : UserManagerTestBase<TUser, TRole, string>
@@ -30,6 +30,11 @@ namespace Microsoft.AspNet.Identity.Test
     {
         private readonly IdentityErrorDescriber _errorDescriber = new IdentityErrorDescriber();
 
+        protected virtual bool ShouldSkipDbTests()
+        {
+            return false;
+        }
+
         protected virtual void SetupIdentityServices(IServiceCollection services, object context = null)
         {
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
@@ -37,15 +42,15 @@ namespace Microsoft.AspNet.Identity.Test
             {
                 options.Password.RequireDigit = false;
                 options.Password.RequireLowercase = false;
-                options.Password.RequireNonLetterOrDigit = false;
+                options.Password.RequireNonAlphanumeric = false;
                 options.Password.RequireUppercase = false;
                 options.User.AllowedUserNameCharacters = null;
             }).AddDefaultTokenProviders();
             AddUserStore(services, context);
             AddRoleStore(services, context);
             services.AddLogging();
-            services.AddInstance<ILogger<UserManager<TUser>>>(new TestLogger<UserManager<TUser>>());
-            services.AddInstance<ILogger<RoleManager<TRole>>>(new TestLogger<RoleManager<TRole>>());
+            services.AddSingleton<ILogger<UserManager<TUser>>>(new TestLogger<UserManager<TUser>>());
+            services.AddSingleton<ILogger<RoleManager<TRole>>>(new TestLogger<RoleManager<TRole>>());
         }
 
         protected virtual UserManager<TUser> CreateManager(object context = null, IServiceCollection services = null, Action<IServiceCollection> configureServices = null)
@@ -98,10 +103,13 @@ namespace Microsoft.AspNet.Identity.Test
         protected abstract Expression<Func<TRole, bool>> RoleNameEqualsPredicate(string roleName);
         protected abstract Expression<Func<TRole, bool>> RoleNameStartsWithPredicate(string roleName);
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanDeleteUser()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -110,10 +118,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Null(await manager.FindByIdAsync(userId));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanUpdateUserName()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var name = Guid.NewGuid().ToString();
             var user = CreateTestUser(name);
@@ -126,10 +137,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Null(await manager.FindByNameAsync(name));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CheckSetUserNameValidatesUser()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var username = "UpdateAsync" + Guid.NewGuid().ToString();
             var newUsername = "New" + Guid.NewGuid().ToString();
@@ -151,10 +165,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"User {await manager.GetUserIdAsync(newUser)} validation failed: {error.Code}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task SetUserNameUpdatesSecurityStamp()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var username = "UpdateAsync" + Guid.NewGuid().ToString();
             var newUsername = "New" + Guid.NewGuid().ToString();
@@ -166,10 +183,28 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.NotEqual(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
+        public async Task CreateUpdatesSecurityStamp()
+        {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
+            var manager = CreateManager();
+            var username = "Create" + Guid.NewGuid().ToString();
+            var user = CreateTestUser(username, useNamePrefixAsUserName: true);
+            var stamp = await manager.GetSecurityStampAsync(user);
+            IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
+            Assert.NotNull(await manager.GetSecurityStampAsync(user));
+        }
+
+        [Fact]
         public async Task CheckSetEmailValidatesUser()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             manager.Options.User.RequireUniqueEmail = true;
             manager.UserValidators.Add(new UserValidator<TUser>());
@@ -186,10 +221,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.IsFailure(await manager.SetEmailAsync(newUser, ""), _errorDescriber.InvalidEmail(""));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanUpdatePasswordUsingHasher()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser("UpdatePassword");
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user, "password"));
@@ -203,20 +241,26 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.True(await manager.CheckPasswordAsync(user, "New"));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanFindById()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
             Assert.NotNull(await manager.FindByIdAsync(await manager.GetUserIdAsync(user)));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task UserValidatorCanBlockCreate()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             manager.UserValidators.Clear();
@@ -225,10 +269,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"User {await manager.GetUserIdAsync(user)} validation failed: {AlwaysBadValidator.ErrorMessage.Code}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task UserValidatorCanBlockUpdate()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -238,10 +285,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"User {await manager.GetUserIdAsync(user)} validation failed: {AlwaysBadValidator.ErrorMessage.Code}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanChainUserValidators()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             manager.UserValidators.Clear();
             var user = CreateTestUser();
@@ -256,22 +306,28 @@ namespace Microsoft.AspNet.Identity.Test
         [ConditionalTheory]
         [InlineData("")]
         [InlineData(null)]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
         public async Task UserValidatorBlocksShortEmailsWhenRequiresUniqueEmail(string email)
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             manager.Options.User.RequireUniqueEmail = true;
             IdentityResultAssert.IsFailure(await manager.CreateAsync(user), _errorDescriber.InvalidEmail(email));
         }
 
-#if DNX451
-        [ConditionalTheory]
+#if NET451
+        [Theory]
         [InlineData("@@afd")]
         [InlineData("bogus")]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
         public async Task UserValidatorBlocksInvalidEmailsWhenRequiresUniqueEmail(string email)
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser("UpdateBlocked", email);
             manager.Options.User.RequireUniqueEmail = true;
@@ -279,10 +335,13 @@ namespace Microsoft.AspNet.Identity.Test
         }
 #endif
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task PasswordValidatorCanBlockAddPassword()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -293,10 +352,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"User {await manager.GetUserIdAsync(user)} password validation failed: {AlwaysBadValidator.ErrorMessage.Code}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanChainPasswordValidators()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             manager.PasswordValidators.Clear();
             manager.PasswordValidators.Add(new AlwaysBadValidator());
@@ -308,10 +370,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(2, result.Errors.Count());
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task PasswordValidatorCanBlockChangePassword()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user, "password"));
@@ -322,10 +387,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"User {await manager.GetUserIdAsync(user)} password validation failed: {AlwaysBadValidator.ErrorMessage.Code}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task PasswordValidatorCanBlockCreateUser()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             manager.PasswordValidators.Clear();
@@ -334,10 +402,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"User {await manager.GetUserIdAsync(user)} password validation failed: {AlwaysBadValidator.ErrorMessage.Code}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanCreateUserNoPassword()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var username = "CreateUserTest" + Guid.NewGuid();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(CreateTestUser(username, useNamePrefixAsUserName: true)));
@@ -350,10 +421,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(0, logins.Count());
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanCreateUserAddLogin()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             const string provider = "ZzAuth";
             const string display = "display";
@@ -369,10 +443,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(display, logins.First().ProviderDisplayName);
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanCreateUserLoginAndAddPassword()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -389,10 +466,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.True(await manager.CheckPasswordAsync(user, "password"));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task AddPasswordFailsIfAlreadyHave()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user, "Password"));
@@ -402,10 +482,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"User {await manager.GetUserIdAsync(user)} already has a password.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanCreateUserAddRemoveLogin()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             var result = await manager.CreateAsync(user);
@@ -430,10 +513,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.NotEqual(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanRemovePassword()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser("CanRemovePassword");
             const string password = "password";
@@ -447,10 +533,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.NotEqual(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanChangePassword()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             const string password = "password";
@@ -464,10 +553,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.NotEqual(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanAddRemoveUserClaim()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -490,10 +582,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(0, userClaims.Count);
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task RemoveClaimOnlyAffectsUser()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             var user2 = CreateTestUser();
@@ -520,10 +615,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(3, userClaims2.Count);
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanReplaceUserClaim()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -540,10 +638,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(claim.Value, newClaim.Value);
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task ReplaceUserClaimOnlyAffectsUser()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             var user2 = CreateTestUser();
@@ -570,10 +671,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal("a", oldClaim2.Value);
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task ChangePasswordFallsIfPasswordWrong()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user, "password"));
@@ -582,10 +686,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"Change password failed for user {await manager.GetUserIdAsync(user)}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task AddDupeUserNameFails()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var username = "AddDupeUserNameFails" + Guid.NewGuid();
             var user = CreateTestUser(username, useNamePrefixAsUserName: true);
@@ -594,10 +701,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.IsFailure(await manager.CreateAsync(user2), _errorDescriber.DuplicateUserName(username));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task AddDupeEmailAllowedByDefault()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser(email: "yup@yup.com");
             var user2 = CreateTestUser(email: "yup@yup.com");
@@ -606,10 +716,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.IsSuccess(await manager.SetEmailAsync(user2, await manager.GetEmailAsync(user)));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task AddDupeEmailFailsWhenUniqueEmailRequired()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             manager.Options.User.RequireUniqueEmail = true;
             var user = CreateTestUser(email: "FooUser@yup.com");
@@ -618,10 +731,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.IsFailure(await manager.CreateAsync(user2), _errorDescriber.DuplicateEmail("FooUser@yup.com"));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task UpdateSecurityStampActuallyChanges()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             Assert.Null(await manager.GetSecurityStampAsync(user));
@@ -632,10 +748,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.NotEqual(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task AddDupeLoginFails()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             var login = new UserLoginInfo("Provider", "key", "display");
@@ -647,10 +766,13 @@ namespace Microsoft.AspNet.Identity.Test
         }
 
         // Email tests
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanFindByEmail()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var email = "foouser@test.com";
             var manager = CreateManager();
             var user = CreateTestUser(email: email);
@@ -659,10 +781,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(user, fetch);
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanFindUsersViaUserQuerable()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var mgr = CreateManager();
             if (mgr.SupportsQueryableUsers)
             {
@@ -676,17 +801,20 @@ namespace Microsoft.AspNet.Identity.Test
             }
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task ConfirmEmailFalseByDefaultTest()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
             Assert.False(await manager.IsEmailConfirmedAsync(user));
         }
 
-        private class StaticTokenProvider : IUserTokenProvider<TUser>
+        private class StaticTokenProvider : IUserTwoFactorTokenProvider<TUser>
         {
             public async Task<string> GenerateAsync(string purpose, UserManager<TUser> manager, TUser user)
             {
@@ -714,10 +842,13 @@ namespace Microsoft.AspNet.Identity.Test
             }
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanResetPasswordWithStaticTokenProvider()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             manager.RegisterTokenProvider("Static", new StaticTokenProvider());
             manager.Options.Tokens.PasswordResetTokenProvider = "Static";
@@ -736,10 +867,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.NotEqual(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task PasswordValidatorCanBlockResetPasswordWithStaticTokenProvider()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             manager.RegisterTokenProvider("Static", new StaticTokenProvider());
             manager.Options.Tokens.PasswordResetTokenProvider = "Static";
@@ -759,10 +893,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task ResetPasswordWithStaticTokenProviderFailsWithWrongToken()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             manager.RegisterTokenProvider("Static", new StaticTokenProvider());
             manager.Options.Tokens.PasswordResetTokenProvider = "Static";
@@ -778,10 +915,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanGenerateAndVerifyUserTokenWithStaticTokenProvider()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             manager.RegisterTokenProvider("Static", new StaticTokenProvider());
             var user = CreateTestUser();
@@ -803,10 +943,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"VerifyUserTokenAsync() failed with purpose: test for user { await manager.GetUserIdAsync(user2)}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanConfirmEmailWithStaticToken()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             manager.RegisterTokenProvider("Static", new StaticTokenProvider());
             manager.Options.Tokens.EmailConfirmationTokenProvider = "Static";
@@ -822,10 +965,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.False(await manager.IsEmailConfirmedAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task ConfirmEmailWithStaticTokenFailsWithWrongToken()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             manager.RegisterTokenProvider("Static", new StaticTokenProvider());
             manager.Options.Tokens.EmailConfirmationTokenProvider = "Static";
@@ -837,10 +983,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"VerifyUserTokenAsync() failed with purpose: EmailConfirmation for user { await manager.GetUserIdAsync(user)}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task ConfirmTokenFailsAfterPasswordChange()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser(namePrefix: "Test");
             Assert.False(await manager.IsEmailConfirmedAsync(user));
@@ -855,10 +1004,13 @@ namespace Microsoft.AspNet.Identity.Test
 
         // Lockout tests
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task SingleFailureLockout()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var mgr = CreateManager();
             mgr.Options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromHours(1);
             mgr.Options.Lockout.MaxFailedAccessAttempts = 0;
@@ -870,14 +1022,17 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.True(await mgr.IsLockedOutAsync(user));
             Assert.True(await mgr.GetLockoutEndDateAsync(user) > DateTimeOffset.UtcNow.AddMinutes(55));
             IdentityResultAssert.VerifyLogMessage(mgr.Logger, $"User {await mgr.GetUserIdAsync(user)} is locked out.");
-            
+
             Assert.Equal(0, await mgr.GetAccessFailedCountAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task TwoFailureLockout()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var mgr = CreateManager();
             mgr.Options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromHours(1);
             mgr.Options.Lockout.MaxFailedAccessAttempts = 2;
@@ -896,10 +1051,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(0, await mgr.GetAccessFailedCountAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task ResetAccessCountPreventsLockout()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var mgr = CreateManager();
             mgr.Options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromHours(1);
             mgr.Options.Lockout.MaxFailedAccessAttempts = 2;
@@ -921,10 +1079,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(1, await mgr.GetAccessFailedCountAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanEnableLockoutManuallyAndLockout()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var mgr = CreateManager();
             mgr.Options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromHours(1);
             mgr.Options.Lockout.AllowedForNewUsers = false;
@@ -946,10 +1107,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(0, await mgr.GetAccessFailedCountAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task UserNotLockedOutWithNullDateTimeAndIsSetToNullDate()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var mgr = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await mgr.CreateAsync(user));
@@ -959,10 +1123,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(new DateTimeOffset(), await mgr.GetLockoutEndDateAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task LockoutFailsIfNotEnabled()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var mgr = CreateManager();
             mgr.Options.Lockout.AllowedForNewUsers = false;
             var user = CreateTestUser();
@@ -974,10 +1141,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.False(await mgr.IsLockedOutAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task LockoutEndToUtcNowMinus1SecInUserShouldNotBeLockedOut()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var mgr = CreateManager();
             var user = CreateTestUser(lockoutEnd: DateTimeOffset.UtcNow.AddSeconds(-1));
             IdentityResultAssert.IsSuccess(await mgr.CreateAsync(user));
@@ -985,10 +1155,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.False(await mgr.IsLockedOutAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task LockoutEndToUtcNowSubOneSecondWithManagerShouldNotBeLockedOut()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var mgr = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await mgr.CreateAsync(user));
@@ -997,10 +1170,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.False(await mgr.IsLockedOutAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task LockoutEndToUtcNowPlus5ShouldBeLockedOut()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var mgr = CreateManager();
             var lockoutEnd = DateTimeOffset.UtcNow.AddMinutes(5);
             var user = CreateTestUser(lockoutEnd: lockoutEnd);
@@ -1009,10 +1185,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.True(await mgr.IsLockedOutAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task UserLockedOutWithDateTimeLocalKindNowPlus30()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var mgr = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await mgr.CreateAsync(user));
@@ -1025,10 +1204,13 @@ namespace Microsoft.AspNet.Identity.Test
         }
 
         // Role Tests
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanCreateRoleTest()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateRoleManager();
             var roleName = "create" + Guid.NewGuid().ToString();
             var role = CreateTestRole(roleName, useRoleNamePrefixAsRoleName: true);
@@ -1058,10 +1240,13 @@ namespace Microsoft.AspNet.Identity.Test
             }
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task BadValidatorBlocksCreateRole()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateRoleManager();
             manager.RoleValidators.Clear();
             manager.RoleValidators.Add(new AlwaysBadValidator());
@@ -1071,10 +1256,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"Role {await manager.GetRoleIdAsync(role)} validation failed: {AlwaysBadValidator.ErrorMessage.Code}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanChainRoleValidators()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateRoleManager();
             manager.RoleValidators.Clear();
             manager.RoleValidators.Add(new AlwaysBadValidator());
@@ -1086,10 +1274,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(2, result.Errors.Count());
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task BadValidatorBlocksRoleUpdate()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateRoleManager();
             var role = CreateTestRole("poorguy");
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(role));
@@ -1100,10 +1291,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"Role {await manager.GetRoleIdAsync(role)} validation failed: {AlwaysBadValidator.ErrorMessage.Code}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanDeleteRole()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateRoleManager();
             var roleName = "delete" + Guid.NewGuid().ToString();
             var role = CreateTestRole(roleName, useRoleNamePrefixAsRoleName: true);
@@ -1114,10 +1308,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.False(await manager.RoleExistsAsync(roleName));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanAddRemoveRoleClaim()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateRoleManager();
             var role = CreateTestRole("ClaimsAddRemove");
             var roleSafe = CreateTestRole("ClaimsAdd");
@@ -1150,10 +1347,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(3, safeRoleClaims.Count);
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanRoleFindById()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateRoleManager();
             var role = CreateTestRole("FindByIdAsync");
             Assert.Null(await manager.FindByIdAsync(await manager.GetRoleIdAsync(role)));
@@ -1161,10 +1361,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(role, await manager.FindByIdAsync(await manager.GetRoleIdAsync(role)));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanRoleFindByName()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateRoleManager();
             var roleName = "FindByNameAsync" + Guid.NewGuid().ToString();
             var role = CreateTestRole(roleName, useRoleNamePrefixAsRoleName: true);
@@ -1174,10 +1377,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(role, await manager.FindByNameAsync(roleName));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanUpdateRoleName()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateRoleManager();
             var roleName = "update" + Guid.NewGuid().ToString();
             var role = CreateTestRole(roleName, useRoleNamePrefixAsRoleName: true);
@@ -1190,10 +1396,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(role, await manager.FindByNameAsync("Changed"));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanQueryableRoles()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateRoleManager();
             if (manager.SupportsQueryableRoles)
             {
@@ -1207,56 +1416,13 @@ namespace Microsoft.AspNet.Identity.Test
             }
         }
 
-        // Enable when delete on cascade is supported in EF
-        // [ConditionalTheory]
-        //[FrameworkSkipCondition(RuntimeFrameworks.Mono)]
-        public async Task DeleteRoleNonEmptySucceedsTest()
-        {
-            // Need fail if not empty?
-            var context = CreateTestContext();
-            var userMgr = CreateManager(context);
-            var roleMgr = CreateRoleManager(context);
-            var roleName = "delete" + Guid.NewGuid().ToString();
-            var role = CreateTestRole(roleName, useRoleNamePrefixAsRoleName: true);
-            Assert.False(await roleMgr.RoleExistsAsync(roleName));
-            IdentityResultAssert.IsSuccess(await roleMgr.CreateAsync(role));
-            var user = CreateTestUser();
-            IdentityResultAssert.IsSuccess(await userMgr.CreateAsync(user));
-            IdentityResultAssert.IsSuccess(await userMgr.AddToRoleAsync(user, roleName));
-            var roles = await userMgr.GetRolesAsync(user);
-            Assert.Equal(1, roles.Count());
-            IdentityResultAssert.IsSuccess(await roleMgr.DeleteAsync(role));
-            Assert.Null(await roleMgr.FindByNameAsync(roleName));
-            Assert.False(await roleMgr.RoleExistsAsync(roleName));
-            // REVIEW: We should throw if deleteing a non empty role?
-            roles = await userMgr.GetRolesAsync(user);
-
-            // REVIEW: This depends on cascading deletes
-            Assert.Equal(0, roles.Count());
-        }
-
-        // TODO: cascading deletes?  navigation properties not working
-        ////[ConditionalTheory]
-        //[FrameworkSkipCondition(RuntimeFrameworks.Mono)]
-        ////public async Task DeleteUserRemovesFromRoleTest()
-        ////{
-        ////    // Need fail if not empty?
-        ////    var userMgr = CreateManager();
-        ////    var roleMgr = CreateRoleManager();
-        ////    var role = CreateRole("deleteNonEmpty");
-        ////    Assert.False(await roleMgr.RoleExistsAsync(roleName));
-        ////    IdentityResultAssert.IsSuccess(await roleMgr.CreateAsync(role));
-        ////    var user = new TUser() { UserName = "t");
-        ////    IdentityResultAssert.IsSuccess(await userMgr.CreateAsync(user));
-        ////    IdentityResultAssert.IsSuccess(await userMgr.AddToRoleAsync(user, roleName));
-        ////    IdentityResultAssert.IsSuccess(await userMgr.DeleteAsync(user));
-        ////    role = roleMgr.FindByIdAsync(role.Id);
-        ////}
-
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CreateRoleFailsIfExists()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateRoleManager();
             var roleName = "dupeRole" + Guid.NewGuid().ToString();
             var role = CreateTestRole(roleName, useRoleNamePrefixAsRoleName: true);
@@ -1267,10 +1433,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.IsFailure(await manager.CreateAsync(role2));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanAddUsersToRole()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var context = CreateTestContext();
             var manager = CreateManager(context);
             var roleManager = CreateRoleManager(context);
@@ -1289,10 +1458,15 @@ namespace Microsoft.AspNet.Identity.Test
             }
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [ConditionalFact]
+        [FrameworkSkipCondition(RuntimeFrameworks.Mono, SkipReason = "Fails due to threading bugs in Mono")]
         public async Task CanGetRolesForUser()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
+
             var context = CreateTestContext();
             var userManager = CreateManager(context);
             var roleManager = CreateRoleManager(context);
@@ -1324,10 +1498,13 @@ namespace Microsoft.AspNet.Identity.Test
             }
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task RemoveUserFromRoleWithMultipleRoles()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var context = CreateTestContext();
             var userManager = CreateManager(context);
             var roleManager = CreateRoleManager(context);
@@ -1344,10 +1521,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.False(await userManager.IsInRoleAsync(user, await roleManager.GetRoleNameAsync(roles[2])));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanRemoveUsersFromRole()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var context = CreateTestContext();
             var userManager = CreateManager(context);
             var roleManager = CreateRoleManager(context);
@@ -1370,10 +1550,13 @@ namespace Microsoft.AspNet.Identity.Test
             }
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task RemoveUserNotInRoleFails()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var context = CreateTestContext();
             var userMgr = CreateManager(context);
             var roleMgr = CreateRoleManager(context);
@@ -1387,10 +1570,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(userMgr.Logger, $"User {await userMgr.GetUserIdAsync(user)} is not in role {roleName}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task AddUserToRoleFailsIfAlreadyInRole()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var context = CreateTestContext();
             var userMgr = CreateManager(context);
             var roleMgr = CreateRoleManager(context);
@@ -1405,10 +1591,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(userMgr.Logger, $"User {await userMgr.GetUserIdAsync(user)} is already in role {roleName}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task AddUserToRolesIgnoresDuplicates()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var context = CreateTestContext();
             var userMgr = CreateManager(context);
             var roleMgr = CreateRoleManager(context);
@@ -1422,10 +1611,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.True(await userMgr.IsInRoleAsync(user, roleName));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanFindRoleByNameWithManager()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var roleMgr = CreateRoleManager();
             var roleName = "findRoleByNameTest" + Guid.NewGuid().ToString();
             var role = CreateTestRole(roleName, useRoleNamePrefixAsRoleName: true);
@@ -1433,10 +1625,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.NotNull(await roleMgr.FindByNameAsync(roleName));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanFindRoleWithManager()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var roleMgr = CreateRoleManager();
             var roleName = "findRoleTest" + Guid.NewGuid().ToString();
             var role = CreateTestRole(roleName, useRoleNamePrefixAsRoleName: true);
@@ -1444,10 +1639,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(roleName, await roleMgr.GetRoleNameAsync(await roleMgr.FindByNameAsync(roleName)));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task SetPhoneNumberTest()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser(phoneNumber: "123-456-7890");
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1458,10 +1656,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.NotEqual(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanChangePhoneNumber()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser(phoneNumber: "123-456-7890");
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1474,10 +1675,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.NotEqual(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task ChangePhoneNumberFailsWithWrongToken()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser(phoneNumber: "123-456-7890");
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1491,10 +1695,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task ChangePhoneNumberFailsWithWrongPhoneNumber()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser(phoneNumber: "123-456-7890");
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1508,10 +1715,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanVerifyPhoneNumber()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1529,10 +1739,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"VerifyChangePhoneNumberTokenAsync() failed for user {await manager.GetUserIdAsync(user)}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanChangeEmail()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser("foouser");
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1548,11 +1761,14 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.NotEqual(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task CanChangeEmailWithDifferentTokenProvider()
         {
-            var manager = CreateManager(context: null, services: null, 
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
+            var manager = CreateManager(context: null, services: null,
                 configureServices: s => s.Configure<IdentityOptions>(
                     o => o.Tokens.ProviderMap["NewProvider2"] = new TokenProviderDescriptor(typeof(EmailTokenProvider<TUser>))));
             manager.Options.Tokens.ChangeEmailTokenProvider = "NewProvider2";
@@ -1570,10 +1786,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.NotEqual(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task ChangeEmailFailsWithWrongToken()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser("foouser");
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1590,10 +1809,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task ChangeEmailFailsWithEmail()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser("foouser");
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1611,10 +1833,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(stamp, await manager.GetSecurityStampAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task EmailFactorFailsAfterSecurityStampChangeTest()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             string factorId = "Email"; //default
             var user = CreateTestUser("foouser");
@@ -1633,10 +1858,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"VerifyTwoFactorTokenAsync() failed for user {await manager.GetUserIdAsync(user)}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task EnableTwoFactorChangesSecurityStamp()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1647,10 +1875,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.True(await manager.GetTwoFactorEnabledAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task GenerateTwoFactorWithUnknownFactorProviderWillThrow()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1662,10 +1893,13 @@ namespace Microsoft.AspNet.Identity.Test
                 () => manager.VerifyTwoFactorTokenAsync(user, "bogus", "bogus"), error);
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task GetValidTwoFactorTestEmptyWithNoProviders()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1674,10 +1908,37 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.True(!factors.Any());
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
+        public async Task CanGetSetUpdateAndRemoveUserToken()
+        {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
+            var manager = CreateManager();
+            var user = CreateTestUser();
+            IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
+            Assert.Null(await manager.GetAuthenticationTokenAsync(user, "provider", "name"));
+            IdentityResultAssert.IsSuccess(await manager.SetAuthenticationTokenAsync(user, "provider", "name", "value"));
+            Assert.Equal("value", await manager.GetAuthenticationTokenAsync(user, "provider", "name"));
+
+            IdentityResultAssert.IsSuccess(await manager.SetAuthenticationTokenAsync(user, "provider", "name", "value2"));
+            Assert.Equal("value2", await manager.GetAuthenticationTokenAsync(user, "provider", "name"));
+
+            IdentityResultAssert.IsSuccess(await manager.RemoveAuthenticationTokenAsync(user, "whatevs", "name"));
+            Assert.Equal("value2", await manager.GetAuthenticationTokenAsync(user, "provider", "name"));
+
+            IdentityResultAssert.IsSuccess(await manager.RemoveAuthenticationTokenAsync(user, "provider", "name"));
+            Assert.Null(await manager.GetAuthenticationTokenAsync(user, "provider", "name"));
+        }
+
+        [Fact]
         public async Task CanGetValidTwoFactor()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser();
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1706,10 +1967,13 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal("Phone", factors[0]);
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task PhoneFactorFailsAfterSecurityStampChangeTest()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var factorId = "Phone"; // default
             var user = CreateTestUser(phoneNumber: "4251234567");
@@ -1723,10 +1987,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"VerifyTwoFactorTokenAsync() failed for user {await manager.GetUserIdAsync(user)}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task VerifyTokenFromWrongTokenProviderFails()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser(phoneNumber: "4251234567");
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1736,10 +2003,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"VerifyTwoFactorTokenAsync() failed for user {await manager.GetUserIdAsync(user)}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task VerifyWithWrongSmsTokenFails()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
             var user = CreateTestUser(phoneNumber: "4251234567");
             IdentityResultAssert.IsSuccess(await manager.CreateAsync(user));
@@ -1747,10 +2017,13 @@ namespace Microsoft.AspNet.Identity.Test
             IdentityResultAssert.VerifyLogMessage(manager.Logger, $"VerifyTwoFactorTokenAsync() failed for user {await manager.GetUserIdAsync(user)}.");
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [Fact]
         public async Task NullableDateTimeOperationTest()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var userMgr = CreateManager();
             var user = CreateTestUser(lockoutEnabled: true);
             IdentityResultAssert.IsSuccess(await userMgr.CreateAsync(user));
@@ -1766,10 +2039,14 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(DateTimeOffset.Parse("01/01/2014"), await userMgr.GetLockoutEndDateAsync(user));
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [ConditionalFact]
+        [FrameworkSkipCondition(RuntimeFrameworks.Mono, SkipReason = "Fails due to threading bugs in Mono")]
         public async Task CanGetUsersWithClaims()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var manager = CreateManager();
 
             for (int i = 0; i < 6; i++)
@@ -1788,10 +2065,14 @@ namespace Microsoft.AspNet.Identity.Test
             Assert.Equal(0, (await manager.GetUsersForClaimAsync(new Claim("123", "456"))).Count);
         }
 
-        [ConditionalTheory]
-        [FrameworkSkipCondition(RuntimeFrameworks.Mono)]
+        [ConditionalFact]
+        [FrameworkSkipCondition(RuntimeFrameworks.Mono, SkipReason = "Fails due to threading bugs in Mono")]
         public async Task CanGetUsersInRole()
         {
+            if (ShouldSkipDbTests())
+            {
+                return;
+            }
             var context = CreateTestContext();
             var manager = CreateManager(context);
             var roleManager = CreateRoleManager(context);

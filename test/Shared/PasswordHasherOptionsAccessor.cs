@@ -2,9 +2,9 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
-using Microsoft.Extensions.OptionsModel;
+using Microsoft.Extensions.Options;
 
-namespace Microsoft.AspNet.Identity.Test
+namespace Microsoft.AspNetCore.Identity.Test
 {
     internal class PasswordHasherOptionsAccessor : IOptions<PasswordHasherOptions>
     {

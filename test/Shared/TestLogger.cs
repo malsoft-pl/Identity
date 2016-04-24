@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 
-namespace Microsoft.AspNet.Identity.Test
+namespace Microsoft.AspNetCore.Identity.Test
 {
     public interface ITestLogger
     {
@@ -16,7 +16,7 @@ namespace Microsoft.AspNet.Identity.Test
     {
         public IList<string> LogMessages { get; } = new List<string>();
 
-        public IDisposable BeginScopeImpl(object state)
+        public IDisposable BeginScope<TState>(TState state)
         {
             LogMessages.Add(state?.ToString());
             return null;
@@ -27,7 +27,7 @@ namespace Microsoft.AspNet.Identity.Test
             return true;
         }
 
-        public void Log(LogLevel logLevel, int eventId, object state, Exception exception, Func<object, Exception, string> formatter)
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
         {
             if (formatter == null)
             {

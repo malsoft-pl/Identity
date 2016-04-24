@@ -5,11 +5,12 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Text;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
-using Microsoft.Extensions.OptionsModel;
 
-namespace Microsoft.AspNet.Identity.Test
+namespace Microsoft.AspNetCore.Identity.Test
 {
     public static class MockHelpers
     {
@@ -18,7 +19,7 @@ namespace Microsoft.AspNet.Identity.Test
         public static Mock<UserManager<TUser>> MockUserManager<TUser>() where TUser : class
         {
             var store = new Mock<IUserStore<TUser>>();
-            var mgr = new Mock<UserManager<TUser>>(store.Object, null, null, null, null, null, null, null, null, null);
+            var mgr = new Mock<UserManager<TUser>>(store.Object, null, null, null, null, null, null, null, null);
             mgr.Object.UserValidators.Add(new UserValidator<TUser>());
             mgr.Object.PasswordValidators.Add(new PasswordValidator<TUser>());
             return mgr;
@@ -36,9 +37,9 @@ namespace Microsoft.AspNet.Identity.Test
         {
             logStore = logStore ?? LogMessage;
             var logger = new Mock<ILogger<T>>();
-            logger.Setup(x => x.Log(It.IsAny<LogLevel>(), It.IsAny<int>(), It.IsAny<object>(),
+            logger.Setup(x => x.Log(It.IsAny<LogLevel>(), It.IsAny<EventId>(), It.IsAny<object>(),
                 It.IsAny<Exception>(), It.IsAny<Func<object, Exception, string>>()))
-                .Callback((LogLevel logLevel, int eventId, object state, Exception exception, Func<object, Exception, string> formatter) =>
+                .Callback((LogLevel logLevel, EventId eventId, object state, Exception exception, Func<object, Exception, string> formatter) =>
                 {
                     if (formatter == null)
                     {
@@ -50,12 +51,12 @@ namespace Microsoft.AspNet.Identity.Test
                     }
                     logStore.Append(" ");
                 });
-            logger.Setup(x => x.BeginScopeImpl(It.IsAny<object>())).Callback((object state) =>
+            logger.Setup(x => x.BeginScope(It.IsAny<object>())).Callback((object state) =>
                 {
                     logStore.Append(state.ToString());
                     logStore.Append(" ");
                 });
-            logger.Setup(x => x.IsEnabled(LogLevel.Verbose)).Returns(true);
+            logger.Setup(x => x.IsEnabled(LogLevel.Debug)).Returns(true);
             logger.Setup(x => x.IsEnabled(LogLevel.Warning)).Returns(true);
 
             return logger;
@@ -76,8 +77,7 @@ namespace Microsoft.AspNet.Identity.Test
             var userManager = new UserManager<TUser>(store, options.Object, new PasswordHasher<TUser>(),
                 userValidators, pwdValidators, new UpperInvariantLookupNormalizer(),
                 new IdentityErrorDescriber(), null,
-                new Mock<ILogger<UserManager<TUser>>>().Object,
-                null);
+                new Mock<ILogger<UserManager<TUser>>>().Object);
             validator.Setup(v => v.ValidateAsync(userManager, It.IsAny<TUser>()))
                 .Returns(Task.FromResult(IdentityResult.Success)).Verifiable();
             return userManager;
